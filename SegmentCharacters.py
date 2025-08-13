@@ -6,8 +6,8 @@ from skimage.transform import resize
 
 def segment_characters(plate_binary: np.ndarray):
     """
-    Input: binary plate image (0/1), text=1
-    Return: (chars_20x20_list, x_positions_list)
+    Input: plate_binary (0/1), text=1
+    Output: (list_of_20x20_char_imgs, list_of_x_positions)
     """
     if plate_binary is None or plate_binary.size == 0:
         return [], []
