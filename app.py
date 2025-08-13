@@ -308,6 +308,26 @@ else:  # Upload video
                 else:
                     st.image(im, channels="RGB", use_column_width=True)
 
+
+# ---------- Built-in samples ----------
+builtin_images = [p for p in [Path("car.png"), Path("car6.jpg")] if p.exists()]
+builtin_videos = [p for p in [Path("video12.mp4"), Path("video15.mp4")] if p.exists()]
+
+# Build selectbox options
+sample_options = ["—"] + [p.name for p in builtin_images] + [p.name for p in builtin_videos]
+
+# Default to video12.mp4 if it exists, otherwise "—"
+default_index = 0
+if Path("video12.mp4").exists():
+    default_index = sample_options.index("video12.mp4")
+
+sample_choice = st.sidebar.selectbox(
+    "Quick sample",
+    sample_options,
+    index=default_index
+)
+
+
 # ---------- Footer ----------
 st.markdown(
     """
