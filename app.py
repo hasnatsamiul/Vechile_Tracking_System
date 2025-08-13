@@ -223,7 +223,7 @@ def process_frame(frame_bgr, show_debug=False):
 
     return view, plate_text, plate_box, dbg_imgs
 
-with st.expander("How it works / tips", expanded=False):
+with st.expander("Training isnt properly done in Streamlit app but You can see how it works", expanded=False):
     st.markdown("""
 - This app finds plate candidates via contours + geometry (area & aspect ratio), then **reads the plate** either with the **legacy SVM** (if `finalized_model.sav` loads) or **EasyOCR** (if installed).
 - If detection is unstable, tune sliders in the sidebar:
