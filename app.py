@@ -6,17 +6,12 @@ import streamlit as st
 import numpy as np
 import cv2
 
-# ---- scikit-image pieces (compact imports to speed cold start)
 from skimage.filters import threshold_otsu
 from skimage import measure
 from skimage.measure import regionprops
 from skimage.transform import resize
 
-# =========================
-# Compat shim for old pickles
-# =========================
-# Older scikit-learn pickles reference `sklearn.svm.classes`.
-# On modern versions it's `sklearn.svm._classes`. This shim maps the legacy path.
+# ======== compat shim for old sklearn pickles (sklearn.svm.classes) ========
 try:
     from sklearn.svm import SVC, LinearSVC, SVR, LinearSVR, NuSVC, NuSVR, OneClassSVM
     legacy = types.ModuleType("sklearn.svm.classes")
@@ -29,7 +24,6 @@ try:
     legacy.OneClassSVM = OneClassSVM
     sys.modules["sklearn.svm.classes"] = legacy
 except Exception:
-    # If sklearn isn't importable yet, we'll fail later in load_clf() anyway.
     pass
 
 # =========================
@@ -62,14 +56,12 @@ if clf is None:
 # Core CV helpers
 # =========================
 def to_gray(image_bgr: np.ndarray) -> np.ndarray:
-    """BGR (OpenCV) -> single-channel float grayscale in [0,255]."""
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
     return gray.astype(np.float32)
 
 def maybe_rotate(image: np.ndarray, deg: int) -> np.ndarray:
     if deg == 0:
         return image
-    # Use cv2 rotation for speed
     if deg == 90:
         return cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
     if deg == 180:
@@ -79,19 +71,13 @@ def maybe_rotate(image: np.ndarray, deg: int) -> np.ndarray:
     return image
 
 def binarize(gray_255: np.ndarray) -> np.ndarray:
-    """Otsu threshold; return boolean mask (True = foreground)."""
     t = threshold_otsu(gray_255)
     return gray_255 > t
 
-def find_plate(binary: np.ndarray, min_area: int) -> tuple[np.ndarray | None, tuple[int,int,int,int] | None]:
-    """
-    Heuristic plate finder using connected components and aspect/size filters.
-    Returns (plate_binary_crop, bbox) or (None, None).
-    """
+def find_plate(binary: np.ndarray, min_area: int):
     label_image = measure.label(binary)
     H, W = label_image.shape
 
-    # Two plausible dimension sets (from your script):
     dims1 = (0.03*H, 0.08*H, 0.15*W, 0.30*W)
     dims2 = (0.08*H, 0.20*H, 0.15*W, 0.40*W)
 
@@ -102,7 +88,6 @@ def find_plate(binary: np.ndarray, min_area: int) -> tuple[np.ndarray | None, tu
                 continue
             y0, x0, y1, x1 = region.bbox
             rh, rw = (y1 - y0), (x1 - x0)
-            # typical plate: width > height, fits size window
             if (min_h <= rh <= max_h) and (min_w <= rw <= max_w) and (rw > rh):
                 crop = binary[y0:y1, x0:x1]
                 return crop, (y0, x0, y1, x1)
@@ -113,50 +98,37 @@ def find_plate(binary: np.ndarray, min_area: int) -> tuple[np.ndarray | None, tu
         plate, bbox = search(dims2)
     return plate, bbox
 
-def segment_characters(license_plate_bool: np.ndarray) -> tuple[list[np.ndarray], list[int]]:
-    """
-    Invert license plate, label, then pick character-like regions by size.
-    Returns (list of 20x20 float arrays), (x positions for ordering).
-    """
-    license_inv = np.invert(license_plate_bool)  # match original approach
+def segment_characters(license_plate_bool: np.ndarray):
+    license_inv = np.invert(license_plate_bool)
     labelled = measure.label(license_inv)
 
     H, W = license_inv.shape
-    # Heuristic from your script:
     char_dims = (0.35*H, 0.60*H, 0.05*W, 0.15*W)
     min_h, max_h, min_w, max_w = char_dims
 
-    chars = []
-    x_positions = []
-
+    chars, x_positions = [], []
     for region in regionprops(labelled):
         y0, x0, y1, x1 = region.bbox
         rh, rw = (y1 - y0), (x1 - x0)
         if (min_h < rh < max_h) and (min_w < rw < max_w):
             roi = license_inv[y0:y1, x0:x1]
-            # resize to 20x20 float32 in [0,1]
             r = resize(roi.astype(float), (20, 20), preserve_range=True, anti_aliasing=True)
-            r = (r > 0.5).astype(np.float32)  # simple binarization after resize
+            r = (r > 0.5).astype(np.float32)
             chars.append(r)
             x_positions.append(int(x0))
     return chars, x_positions
 
-def predict_plate(chars: list[np.ndarray], x_positions: list[int]):
-    """Predict with classifier; return raw and ordered strings."""
+def predict_plate(chars, x_positions):
     if not chars or clf is None:
         return "", ""
-    # Prepare features: flatten to 1D
     X = np.array([c.reshape(1, -1)[0] for c in chars], dtype=np.float32)
-    preds = clf.predict(X)  # each item likely a single char label
-
+    preds = clf.predict(X)
     raw = "".join(str(p) for p in preds)
-
-    # order by x (left->right)
     order = np.argsort(np.array(x_positions))
     ordered = "".join(str(preds[i]) for i in order)
     return raw, ordered
 
-def draw_bbox(img_bgr: np.ndarray, bbox: tuple[int,int,int,int] | None) -> np.ndarray:
+def draw_bbox(img_bgr: np.ndarray, bbox):
     if bbox is None:
         return img_bgr
     y0, x0, y1, x1 = bbox
@@ -165,20 +137,59 @@ def draw_bbox(img_bgr: np.ndarray, bbox: tuple[int,int,int,int] | None) -> np.nd
     return out
 
 # =========================
-# UI – choose input
+# Sample files (built-in)
 # =========================
-mode = st.radio("Choose input", ["Image", "Video (first frame)"])
+SAMPLE_IMAGE = Path("car6.jpg")
+SAMPLE_VIDEOS = [p for p in [Path("video12.mp4"), Path("video15.mp4")] if p.exists()]
 
-uploaded = None
+has_sample_image = SAMPLE_IMAGE.exists()
+has_sample_videos = len(SAMPLE_VIDEOS) > 0
+
+# =========================
+# UI – choose source
+# =========================
+source = st.radio(
+    "Choose input source",
+    [
+        "Sample image" if has_sample_image else "Upload image",
+        "Upload image",
+        "Sample video (first frame)" if has_sample_videos else "Upload video",
+        "Upload video",
+    ],
+    index=0,
+)
+
 frame_bgr = None
 
-if mode == "Image":
+# ---- Sample image
+if source == "Sample image" and has_sample_image:
+    st.caption(f"Using bundled sample: `{SAMPLE_IMAGE.name}`")
+    data = SAMPLE_IMAGE.read_bytes()
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    frame_bgr = img
+
+# ---- Upload image
+elif source == "Upload image":
     uploaded = st.file_uploader("Upload an image (jpg/png)", type=["jpg", "jpeg", "png"])
     if uploaded:
         data = np.frombuffer(uploaded.read(), np.uint8)
         frame_bgr = cv2.imdecode(data, cv2.IMREAD_COLOR)
 
-else:
+# ---- Sample video
+elif source == "Sample video (first frame)" and has_sample_videos:
+    vid_name = st.selectbox("Choose bundled sample video", [p.name for p in SAMPLE_VIDEOS], index=0)
+    chosen = next(p for p in SAMPLE_VIDEOS if p.name == vid_name)
+    st.caption(f"Using bundled video: `{chosen.name}` (processing first frame)")
+    cap = cv2.VideoCapture(str(chosen))
+    ok, f = cap.read()
+    cap.release()
+    if ok:
+        frame_bgr = f
+    else:
+        st.error("Could not read a frame from the sample video.")
+
+# ---- Upload video
+elif source == "Upload video":
     vfile = st.file_uploader("Upload a video", type=["mp4", "mov", "avi", "mkv"])
     if vfile:
         t = tempfile.NamedTemporaryFile(delete=False)
@@ -192,22 +203,20 @@ else:
         else:
             st.error("Could not read a frame from the uploaded video.")
 
+# =========================
+# Run pipeline
+# =========================
 if frame_bgr is not None:
-    # Optional rotate
     frame_bgr = maybe_rotate(frame_bgr, rotate_deg)
 
-    # Show original
     st.subheader("Input")
     st.image(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB), channels="RGB", use_column_width=True)
 
-    # Gray + binary
     gray = to_gray(frame_bgr)
     binary = binarize(gray)
 
-    # Find plate region
     plate_bool, bbox = find_plate(binary, min_region_area)
 
-    # Visualize bbox on original
     vis = draw_bbox(frame_bgr, bbox)
     st.subheader("Detection")
     st.image(cv2.cvtColor(vis, cv2.COLOR_BGR2RGB), channels="RGB", use_column_width=True)
@@ -223,7 +232,6 @@ if frame_bgr is not None:
             if plate_bool is not None:
                 st.image((plate_bool * 255).astype(np.uint8), clamp=True, use_column_width=True, caption="Plate crop (binary)")
 
-    # Segment & predict
     if plate_bool is None:
         st.error("No plausible plate region found. Try rotating, different image, or tweak settings.")
     else:
@@ -237,13 +245,11 @@ if frame_bgr is not None:
             st.success(f"**Predicted plate (ordered):** `{ordered}`")
             st.caption(f"Raw (detection order): `{raw}`")
 
-            # Log to CSV like your script
             now = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
             row = [raw, ordered, now]
             try:
                 with open("Jutraffic.csv", "a", newline="") as f:
-                    writer = csv.writer(f)
-                    writer.writerow(row)
+                    csv.writer(f).writerow(row)
                 st.info("Logged to Jutraffic.csv")
             except Exception as e:
                 st.warning(f"Could not write to Jutraffic.csv: {e}")
