@@ -1,13 +1,12 @@
 # app.py
-import streamlit as st
-import numpy as np
-import cv2
-import tempfile
-import pickle
-from pathlib import Path
 
-from DetectPlate import detect_plate_from_bgr
+
+import streamlit as st
+import cv2, numpy as np, pickle, tempfile
+from pathlib import Path
+from DetectPlate import detect_plate_from_bgr   # <— use this
 from SegmentCharacters import segment_characters
+
 
 st.set_page_config(page_title="🚗 License Plate Recognition", page_icon="🚗", layout="centered")
 st.title("🚗 License Plate Detection & OCR")
