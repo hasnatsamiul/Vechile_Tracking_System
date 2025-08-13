@@ -42,15 +42,46 @@ show_intermediates = st.sidebar.checkbox("Show intermediate images", value=False
 # =========================
 @st.cache_resource(show_spinner=True)
 def load_clf():
+    import pickle, types, sys
+    from pathlib import Path
+
+    # ---- compat shim for very old pickles that reference sklearn.svm.classes
+    try:
+        from sklearn.svm import SVC, LinearSVC, SVR, LinearSVR, NuSVC, NuSVR, OneClassSVM
+        legacy = types.ModuleType("sklearn.svm.classes")
+        legacy.SVC = SVC
+        legacy.LinearSVC = LinearSVC
+        legacy.SVR = SVR
+        legacy.LinearSVR = LinearSVR
+        legacy.NuSVC = NuSVC
+        legacy.NuSVR = NuSVR
+        legacy.OneClassSVM = OneClassSVM
+        sys.modules["sklearn.svm.classes"] = legacy
+    except Exception:
+        pass
+    # ---- end compat shim
+
     p = Path("finalized_model.sav")
     if not p.exists():
         return None
     with p.open("rb") as f:
-        return pickle.load(f)
+        clf = pickle.load(f)
 
-clf = load_clf()
-if clf is None:
-    st.warning("⚠️ `finalized_model.sav` not found at repo root. Upload it to enable recognition.")
+    # ---- patch missing attrs from older sklearn versions
+    try:
+        # Only for SVM-like models
+        name = getattr(clf, "__class__", type(clf)).__name__
+        if name in ("SVC", "LinearSVC", "NuSVC"):
+            if not hasattr(clf, "break_ties"):
+                clf.break_ties = False  # default in modern sklearn
+            if not hasattr(clf, "decision_function_shape"):
+                clf.decision_function_shape = "ovr"  # safe default
+    except Exception:
+        pass
+    # ---- end patch
+
+    return clf
+
 
 # =========================
 # Core CV helpers
