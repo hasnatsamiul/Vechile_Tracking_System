@@ -1,5 +1,8 @@
-# LicensePlateDetector
-Detects license plate of car and recognizes its characters
+For Live Demo go to the link:
+
+https://vechiletrackingsystemsamiul.streamlit.app/
+
+## For some reason the detection isn't working properly on Streamlit. We are trying to resolve it as quickly as possible. But you can get the overview from the live demo. Thank you.
 
 ## Method
 
