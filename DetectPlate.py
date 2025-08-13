@@ -8,7 +8,7 @@ from skimage.measure import regionprops
 def _find_plate_regions(binary_car_image, plate_dimensions):
     label_image = measure.label(binary_car_image)
     min_h, max_h, min_w, max_w = plate_dimensions
-    plate_rois, boxes = [], []
+    rois, boxes = [], []
     for region in regionprops(label_image):
         if region.area < 50:
             continue
@@ -16,21 +16,21 @@ def _find_plate_regions(binary_car_image, plate_dimensions):
         h, w = (max_row - min_row), (max_col - min_col)
         if (min_h <= h <= max_h) and (min_w <= w <= max_w) and (w > h):
             roi = binary_car_image[min_row:max_row, min_col:max_col]
-            plate_rois.append(roi)
+            rois.append(roi)
             boxes.append((min_row, min_col, max_row, max_col))
-    return plate_rois, boxes
+    return rois, boxes
 
 def detect_plate_from_bgr(bgr_img: np.ndarray, rotate_deg: int | None = None):
     """
-    Input: BGR image
-    Return: (plate_binary, box) or (None, None)
+    Input: BGR image (numpy)
+    Output: (plate_binary (0/1), bbox (min_row, min_col, max_row, max_col)) or (None, None)
     """
     if bgr_img is None or bgr_img.size == 0:
         return None, None
 
     gray = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2GRAY).astype("float32") / 255.0
-    if rotate_deg is not None:
-        (h, w) = gray.shape[:2]
+    if rotate_deg:
+        h, w = gray.shape[:2]
         M = cv2.getRotationMatrix2D((w/2, h/2), rotate_deg, 1.0)
         gray = cv2.warpAffine(gray, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
 
@@ -48,12 +48,11 @@ def detect_plate_from_bgr(bgr_img: np.ndarray, rotate_deg: int | None = None):
     if not rois:
         return None, None
 
+    # choose the largest candidate
     idx = int(np.argmax([r.shape[0]*r.shape[1] for r in rois]))
-    plate_bin = rois[idx]
+    plate_bin = (1 - rois[idx]).astype(np.uint8)  # invert: text = 1
     box = boxes[idx]
-    # invert so text is white (1), background black (0)
-    plate_bin = (1 - plate_bin).astype(np.uint8)
     return plate_bin, box
 
-# Optional alias so old imports won't break:
+# Optional alias if you keep old import lines elsewhere
 detect_plate = detect_plate_from_bgr
